@@ -43,7 +43,6 @@
 //#include "targets/RT/USER/lte-softmodem.h"
 #include "executables/softmodem-common.h"
 
-#define MAX_GAP 100ULL
 #define MAX_CLOCK_SHIFT_IN_METERS 1000 //We tolerate the tx sample can shift in one shot of 1000 meters, like in timing advance compensation, or clock drift for other reasons
 const char *const devtype_names[MAX_RF_DEV_TYPE] =
     {"", "USRP B200", "USRP X300", "USRP N300", "USRP X400", "BLADERF", "LMSSDR", "IRIS", "No HW", "UEDv2", "RFSIMULATOR"};
@@ -205,7 +204,6 @@ static void writerProcessWaitingQueue(openair0_device *device)
     found = false;
     pthread_mutex_lock(&ctx->mutex_store);
     for (int i = 0; i < WRITE_QUEUE_SZ; i++) {
-      if (ctx->queue[i].active && llabs(ctx->queue[i].timestamp - ctx->nextTS) < MAX_GAP) {
       if (ctx->queue[i].active && llabs(ctx->queue[i].timestamp - ctx->nextTS) < ctx->max_gap) {
         openair0_timestamp timestamp = ctx->queue[i].timestamp;
         LOG_D(HW, "Dequeue write for TS: %lu\n", timestamp);
@@ -224,7 +222,6 @@ static void writerProcessWaitingQueue(openair0_device *device)
           if (wroteSamples != nsamps)
             LOG_E(HW, "Failed to write to rf\n");
         }
-        ctx->nextTS += nsamps;
         ctx->nextTS = timestamp + nsamps;
         pthread_mutex_lock(&ctx->mutex_store);
       }
@@ -253,13 +250,11 @@ int openair0_write_reorder(openair0_device *device, openair0_timestamp timestamp
   }
   if (pthread_mutex_trylock(&ctx->mutex_write) == 0) {
     // We have the write exclusivity
-    if (llabs(timestamp - ctx->nextTS) < MAX_GAP) { // We are writing in sequence of the previous write
     if (llabs(timestamp - ctx->nextTS) <ctx->max_gap ) { // We are writing in sequence of the previous write
       if (flags || IS_SOFTMODEM_RFSIM)
         wroteSamples = device->trx_write_func(device, timestamp, txp, nsamps, nbAnt, flags);
       else
         wroteSamples = nsamps;
-      ctx->nextTS += nsamps;
 
       ctx->nextTS = timestamp + nsamps;
     } else {
